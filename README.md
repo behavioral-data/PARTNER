@@ -50,4 +50,4 @@ python src/train_model.py \
 	--num_optim_steps 500
 ```
 
-Note that before running this code, you will need a DialoGPT-like transformer model for initialization (`model_name_or_path`, finetuned on your dataset, ideally finetuned on your dataset, check the warm-up strategy in paper) and will need to train your several reward functions. For training the empathy reward, check out [this repository](https://github.com/behavioral-data/Empathy-Mental-Health). 
+Note that before running this code, you will need a DialoGPT-like transformer model for initialization (`model_name_or_path`, ideally finetuned on your dataset, check the warm-up strategy in paper) and will need to separately train multiple reward functions. For training the empathy reward, check out [this repository](https://github.com/behavioral-data/Empathy-Mental-Health). 
