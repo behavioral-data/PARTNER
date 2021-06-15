@@ -30,7 +30,7 @@ $ pip install -r requirements.txt
 
 ### 2. Prepare dataset
 
-A sample raw input data file is available in [dataset/sample.tsv](dataset/sample.tsv). Each line in the file has a post and a corresponding response (tab-separated). This input file can be converted into a format that is recognized by the model using with following command:
+A sample raw input data file is available in [dataset/sample_data.tsv](dataset/sample_data.tsv). Each line in the file has a post and a corresponding response (tab-separated). This input file can be converted into a format that is recognized by the model using with following command:
 ```
 python src/process_data.py --corpus dataset/sample_data.tsv
 ```
