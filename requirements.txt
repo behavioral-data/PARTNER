@@ -6,6 +6,8 @@ certifi==2020.6.20
 cffi==1.12.3
 chardet==3.0.4
 click==7.1.2
+cycler==0.10.0
+Cython==0.29.23
 dataclasses==0.8
 decorator==4.4.0
 Django==3.1.3
@@ -24,7 +26,9 @@ jedi==0.15.1
 Jinja2==2.11.2
 jmespath==0.9.4
 joblib==0.17.0
+kiwisolver==1.3.1
 MarkupSafe==1.1.1
+matplotlib==3.3.4
 mkl-fft==1.0.14
 mkl-random==1.0.2
 mkl-service==2.3.0
@@ -36,10 +40,12 @@ pandas==1.1.4
 parso==0.5.1
 pexpect==4.7.0
 pickleshare==0.7.5
-Pillow==6.1.0
+Pillow==8.2.0
 prompt-toolkit==2.0.9
 protobuf==3.13.0
 ptyprocess==0.6.0
+pycocoevalcap==1.2
+pycocotools==2.0.2
 pycparser==2.19
 Pygments==2.4.2
 pyparsing==2.4.7
@@ -51,10 +57,14 @@ regex==2019.8.19
 requests==2.22.0
 s3transfer==0.2.1
 sacremoses==0.0.43
+scikit-learn==0.24.2
+scipy==1.5.4
 sentencepiece==0.1.91
 six==1.15.0
+sklearn==0.0
 sqlparse==0.4.1
 tensorboardX==1.6
+threadpoolctl==2.1.0
 tokenizers==0.5.2
 torch==1.4.0
 torchvision==0.5.0
