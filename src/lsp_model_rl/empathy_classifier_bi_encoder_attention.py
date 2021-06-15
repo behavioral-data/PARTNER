@@ -30,9 +30,9 @@ class EmpathyClassifier():
 
 	def __init__(self, 
 			device,
-			ER_model_path = 'lsp_model_rl/empathy_util/models/ER-bi-encoder-attention.pth', 
-			IP_model_path = 'lsp_model_rl/empathy_util/models/IP-bi-encoder-attention.pth',
-			EX_model_path = 'lsp_model_rl/empathy_util/models/EX-bi-encoder-attention.pth',
+			ER_model_path = 'src/lsp_model_rl/empathy_util/models/ER-bi-encoder-attention.pth', 
+			IP_model_path = 'src/lsp_model_rl/empathy_util/models/IP-bi-encoder-attention.pth',
+			EX_model_path = 'src/lsp_model_rl/empathy_util/models/EX-bi-encoder-attention.pth',
 			batch_size=2):
 		
 		self.tokenizer = RobertaTokenizer.from_pretrained('roberta-base', do_lower_case=True)

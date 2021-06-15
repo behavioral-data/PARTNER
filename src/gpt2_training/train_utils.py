@@ -7,7 +7,7 @@ import torch
 from collections import defaultdict
 
 from env import END_OF_TEXT_TOKEN
-from lsp_model.optim import warmup_linear, noam_decay, noamwd_decay
+from lsp_model_rl.optim import warmup_linear, noam_decay, noamwd_decay
 
 
 logger = logging.getLogger(__name__)
@@ -64,62 +64,14 @@ def fix_state_dict_namespace(model_state_dict):
 	return model_state_dict
 
 
+
 class InputFeatures(object):
 	def __init__(self, conv_id, input_ids, position_ids, token_type_ids,
-				 lm_labels, context_len, response_len):
-		self.conv_id = conv_id
-		self.choices_features = {
-			'input_ids': input_ids,
-			'position_ids': position_ids,
-			'token_type_ids': token_type_ids
-		}
-		self.lm_labels = lm_labels
-		self.context_len = context_len
-		self.response_len = response_len    # in case we need it
-
-
-class InputFeatures_train(object):
-	def __init__(self, conv_id, input_ids, position_ids, token_type_ids,
-				 lm_labels, weights, input_len=None):
+				seeker_post, response_post, input_len=None):
 		self.conv_id = conv_id
 		self.input_ids = input_ids
 		self.position_ids = position_ids
 		self.token_type_ids = token_type_ids
-		self.lm_labels = lm_labels
-		self.weights = weights
-		if input_len is None:
-			self.input_len = len(input_ids)
-		else:
-			self.input_len = input_len
-
-
-class InputFeatures_train_position(object):
-	def __init__(self, conv_id, input_ids, position_ids, token_type_ids,
-				 lm_labels, weights, pos_label, input_len=None):
-		self.conv_id = conv_id
-		self.input_ids = input_ids
-		self.position_ids = position_ids
-		self.token_type_ids = token_type_ids
-		self.lm_labels = lm_labels
-		self.weights = weights
-		self.pos_label = pos_label
-
-		if input_len is None:
-			self.input_len = len(input_ids)
-		else:
-			self.input_len = input_len
-
-
-class InputFeatures_train_position_with_str(object):
-	def __init__(self, conv_id, input_ids, position_ids, token_type_ids,
-				 lm_labels, weights, pos_label, seeker_post, response_post, input_len=None):
-		self.conv_id = conv_id
-		self.input_ids = input_ids
-		self.position_ids = position_ids
-		self.token_type_ids = token_type_ids
-		self.lm_labels = lm_labels
-		self.weights = weights
-		self.pos_label = pos_label
 
 		self.seeker_post = seeker_post
 		self.response_post = response_post

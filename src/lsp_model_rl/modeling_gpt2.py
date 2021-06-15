@@ -35,7 +35,7 @@ from transformers import GPT2PreTrainedModel, GPT2Model
 from pytorch_pretrained_bert.modeling_gpt2 import GPT2LMHead, Attention, Block, \
 	LayerNorm, MLP
 
-from generate import top_filtering
+# from generate import top_filtering
 
 from .rewards import calc_rewards
 
@@ -100,117 +100,132 @@ class GPT2LMHeadModel(GPT2PreTrainedModel):
 
 	def get_output_embeddings(self):
 		return self.lm_head
+	
+	def padding_tensor_3D(self, sequences, max_len):
+		"""
+		:param sequences: list of tensors
+		:return:
+		"""
+		num = len(sequences)
+		out_dims = (num, max_len, *sequences[0].shape[1:])
+		out_tensor = sequences[0].data.new(*out_dims).fill_(0)
+
+		# print('out_tensor:', out_tensor.shape)
+
+		mask = sequences[0].data.new(*out_dims).fill_(0)
+		for i, tensor in enumerate(sequences):
+			length = tensor.size(0)
+			# print('length:', length)
+			out_tensor[i, :length] = tensor
+			mask[i, :length] = 1
+		return out_tensor, mask
+
+	def padding_tensor_2D(self, sequences, max_len):
+		"""
+		:param sequences: list of tensors
+		:return:
+		"""
+		num = len(sequences)
+		out_dims = (num, max_len)
+		out_tensor = sequences[0].data.new(*out_dims).fill_(0)
+
+		# print('out_tensor:', out_tensor.shape)
+
+		mask = sequences[0].data.new(*out_dims).fill_(0)
+		for i, tensor in enumerate(sequences):
+			length = min(tensor.size(0), max_len)
+			# print('length:', length)
+			out_tensor[i, :length] = tensor[:length]
+			mask[i, :length] = 1
+		return out_tensor, mask
 
 	def forward(self, input_ids, position_ids=None, token_type_ids=None, lm_labels=None, position_labels=None, past=None, seeker_post=None, response_post=None, top_k=60, top_p=0.92, temperature=0.9, eos=None, tokenizer=None, baseline_val=0):
 
-
-		# if lm_labels is not None:
-		# 	print('shapes:', input_ids.shape, lm_labels.shape)
-
 		transformer_start_time = time.time()
+
+		# Forward Transformer Pass
 		hidden_states, presents = self.transformer(input_ids=input_ids, position_ids=position_ids, token_type_ids=token_type_ids, past=past)
+
 		transformer_end_time = time.time()
 
+		# Get LM and position logits
 		lm_logits = self.lm_head(hidden_states)
+
+		if tokenizer is None:
+			return lm_logits, presents
 
 		position_logits = self.position_classifier(hidden_states[:, -1, :])
 
-		if lm_labels is not None:
-			# loss_fct = CrossEntropyLoss(ignore_index=-1)
-			# loss = loss_fct(lm_logits.view(-1, lm_logits.size(-1)), lm_labels.view(-1))
-			loss_fct1 = CrossEntropyLoss(ignore_index=-1, reduction='none')
-			loss1 = loss_fct1(lm_logits.view(-1, lm_logits.size(-1)),
-							  lm_labels.view(-1))
-			loss1 = loss1.view(lm_labels.size(0), lm_labels.size(1))
-			label_size = torch.sum(lm_labels != -1, dim=1).type(loss1.type())
-			loss = torch.sum(loss1)/torch.sum(label_size)
-			ppl = torch.exp(torch.mean(torch.sum(loss1, dim=1).float()
-									   / label_size.float()))
-			# ppl = torch.mean(torch.exp(torch.sum(loss1, dim=1)/label_size))
+		# A1 (Selecting a position)
+		probs_position = torch.softmax(position_logits.view(-1, self.position_num_labels), -1) # (batch_size, num_position)
+		all_positions = torch.argmax(probs_position, 1)
+		all_positions = all_positions.squeeze()
 
-			# Sample from dialogpt
+		all_positions = all_positions.cpu().numpy().tolist()
 
-			all_outputs = []
+		# A2 (Candidate Sentence): Sample from DialoGPT
+		all_outputs = []
+		all_output_ids = []
+		all_output_logits = []
+		sample_dialogpt_start_time = time.time()
 
-			sample_dialogpt_start_time = time.time()
+		for ii, _ in enumerate(input_ids):
+			curr_seeker = tokenizer.encode(seeker_post[ii] + tokenizer.eos_token)
+			curr_seeker = torch.tensor([curr_seeker,])
+			curr_seeker = curr_seeker.to('cuda')
+			generated_output = self.generate(input_ids = curr_seeker, max_length=1000, pad_token_id=tokenizer.eos_token_id, top_p=0.92, top_k=60, temperature=1, num_return_sequences=1)
 
-			for ii, _ in enumerate(input_ids):
-				curr_seeker = tokenizer.encode(seeker_post[ii] + tokenizer.eos_token)
-				curr_seeker = torch.tensor([curr_seeker,])
-				curr_seeker = curr_seeker.to('cuda')
-				generated_output = self.generate(input_ids = curr_seeker, max_length=1000, pad_token_id=tokenizer.eos_token_id, top_p=0.92, top_k=60, temperature=1, num_return_sequences=1)				
-				curr_output = tokenizer.decode(generated_output[:, curr_seeker.shape[-1]:][0], skip_special_tokens=True)
+			curr_output = tokenizer.decode(generated_output[:, curr_seeker.shape[-1]:][0], skip_special_tokens=True)
 
-				all_outputs.append(curr_output)
+			curr_output_ids = generated_output[:, curr_seeker.shape[-1]:][0]
+			curr_output_ids = curr_output_ids[:hidden_states.shape[1]]
+			curr_position_ids = torch.tensor(range(len(curr_output_ids)), dtype=torch.long).to("cuda")
+
+			curr_output_logits = lm_logits[ii, range(curr_output_ids.shape[0]), curr_output_ids]
+
+			all_outputs.append(curr_output)
+			all_output_ids.append(curr_output_ids)
+			all_output_logits.append(curr_output_logits)
+
+		log_softmax = nn.LogSoftmax(1)
+
+		all_output_logits, _ = self.padding_tensor_2D(all_output_logits, hidden_states.shape[1])
+		all_output_logits = log_softmax(all_output_logits)
+
+		sample_dialogpt_end_time = time.time()
+
+
+		# Calculate Reward 
+		
+		rewritten_response = []
+
+		for idx, _ in enumerate(all_outputs):
+			curr_seeker_post = seeker_post[idx]
+			curr_response = response_post[idx]
+			curr_output = all_outputs[idx]
+			curr_position = all_positions[idx]
+
+			curr_response_li = nltk.sent_tokenize(curr_response)
+
+			if curr_position == 0:
+				curr_rewritten_response = curr_response
+
+			else:
+				curr_rewritten_response_li = curr_response_li[:curr_position] + [curr_output] + curr_response_li[curr_position:]
+				curr_rewritten_response = '. '.join(curr_rewritten_response_li)
 			
-			sample_dialogpt_end_time = time.time()
-			
-			print('all_outputs:', all_outputs)
+			rewritten_response.append(curr_rewritten_response)
 
-			if position_labels is None:
-				return loss, ppl
+		reward_start_time = time.time()
+		reward = calc_rewards(seeker_post, response_post, rewritten_response, _empathy_change=True, _perplexity=True)
+		reward_end_time = time.time()
 
-		if position_labels is not None:
-			loss_fct_position = CrossEntropyLoss()
-			loss_position = loss_fct_position(position_logits.view(-1, self.position_num_labels), position_labels.view(-1))
+		batches = np.arange(input_ids.shape[0]).tolist()
 
-			# loss = loss + self.lambda_position * loss_position
+		rl_loss = - (reward - baseline_val) * (-torch.mean(all_output_logits[batches,]) + torch.mean(torch.log(probs_position[batches, all_positions]) ))
 
-			# Sample position
+		return rl_loss, reward
 
-			position_start_time = time.time()
-
-			probs_position = torch.softmax(position_logits.view(-1, self.position_num_labels), -1) # (batch_size, num_position)
-			all_positions = torch.argmax(probs_position, 1)
-			all_positions = all_positions.squeeze()
-
-			all_positions = all_positions.cpu().numpy().tolist()
-
-			position_end_time = time.time()
-
-			# print('all_positions:', all_positions)
-
-			# Calculate loss
-			
-			# return loss, ppl, loss_position
-
-
-		# Calculate reward 
-		if lm_labels is not None and position_labels is not None:
-			rewritten_response = []
-
-			for idx, _ in enumerate(all_outputs):
-				curr_seeker_post = seeker_post[idx]
-				curr_response = response_post[idx]
-				curr_output = all_outputs[idx]
-				curr_position = all_positions[idx]
-
-				curr_response_li = nltk.sent_tokenize(curr_response)
-
-				if curr_position == 0:
-					curr_rewritten_response = curr_response
-
-				else:
-					curr_rewritten_response_li = curr_response_li[:curr_position] + [curr_output] + curr_response_li[curr_position:]
-					curr_rewritten_response = '. '.join(curr_rewritten_response_li)
-				
-				rewritten_response.append(curr_rewritten_response)
-
-			reward_start_time = time.time()
-			reward = calc_rewards(seeker_post, response_post, rewritten_response, _empathy_change=True, _perplexity=True)
-			reward_end_time = time.time()
-
-			batches = np.arange(input_ids.shape[0]).tolist()
-
-			rl_loss = - (reward - baseline_val) * (-loss + torch.mean(torch.log(probs_position[batches, all_positions]) ))
-
-			# print('reward:', reward)
-
-			# print(transformer_end_time - transformer_start_time, sample_dialogpt_end_time - sample_dialogpt_start_time, position_end_time - position_start_time, reward_end_time - reward_start_time)
-
-			return rl_loss, loss, ppl, loss_position, reward
-
-		return lm_logits, position_logits, presents
 	
 	def forward_pointwise(self, input_ids, position_ids=None, token_type_ids=None, lm_labels=None, past=None):
 		hidden_states, presents = self.transformer(input_ids, position_ids, token_type_ids, past)

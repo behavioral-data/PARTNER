@@ -24,7 +24,7 @@ from lsp_model_rl import GPT2LMHeadModel, GPT2Tokenizer, GPT2Config, Adam
 from gpt2_training.train_utils import load_model, boolean_string, set_lr, get_eval_list_same_length
 from gpt2_training.eval_utils import eval_model_loss
 
-from data_loader_position_with_str import BucketingDataLoader, DynamicBatchingLoader, DistributedBucketingDataLoader
+from data_loader import BucketingDataLoader, DynamicBatchingLoader, DistributedBucketingDataLoader
 
 
 from gpt2_training.distributed import all_reduce_and_rescale_tensors, all_gather_list
@@ -73,7 +73,7 @@ parser.add_argument("--warmup_proportion", type=float, default=0.1)
 parser.add_argument("--warmup_steps", type=int, default=16000)
 
 parser.add_argument("--normalize_data", type=boolean_string, default=True)
-parser.add_argument("--fp16", type=boolean_string, default=True)
+parser.add_argument("--fp16", type=boolean_string, default=False)
 parser.add_argument("--lr_schedule", type=str,
 					choices=['noam', 'noamwd', 'BERT', 'None'], default='noam')
 parser.add_argument("--loss_scale", type=float, default=0)
@@ -254,9 +254,9 @@ else:
 if args.local_rank == -1 or get_rank() == 0:
 	train_logger = open(join(log_dir, 'train_log.txt'), 'a+', buffering=1)
 	eval_logger = open(join(log_dir, 'eval_log.txt'), 'a+', buffering=1)
-	print('epoch,global_step,step,mean_loss,mean_ppl,n_token_real,'
+	print('epoch,global_step,step,mean_loss,n_token_real,'
 		  'n_token_total,epoch_time', file=train_logger)
-	print('epoch,global_step,step,eval_loss,eval_ppl', file=eval_logger)
+	print('epoch,global_step,step,eval_loss', file=eval_logger)
 
 global_step = 0
 step = 0
@@ -285,9 +285,11 @@ while True:
 		moving_avg_idx = 0
 
 	model.train()
-	(tr_loss, tr_ppl, mean_ppl, nb_tr_examples, nb_tr_steps) = 0.0, 0.0, 0.0, 0, 0
+	(tr_loss, nb_tr_examples, nb_tr_steps) = 0.0, 0.0, 0.0
 	n_token_real, n_token_total = 0, 0
 	train_start_time_epoch = time.time()
+
+	# print('iteration started')
 
 	for batch in train_dataloader:
 		# torch.cuda.empty_cache()
@@ -295,13 +297,11 @@ while True:
 		seq_len = batch[0].shape[1]
 		batch = tuple(t for t in batch)
 
-		input_ids, position_ids, token_ids, label_ids, pos_labels, seeker_post, response_post,  = batch
+		input_ids, position_ids, token_ids, seeker_post, response_post,  = batch
 
 		input_ids = input_ids.to(device)
 		position_ids = position_ids.to(device)
 		token_ids = token_ids.to(device)
-		label_ids = label_ids.to(device)
-		pos_labels = pos_labels.to(device)
 
 		if args.no_token_id:
 			token_ids = None
@@ -314,13 +314,13 @@ while True:
 			else:
 				baseline_val = cumsum[moving_avg_idx]
 
-			loss, loss_gpt, ppl, loss_position, reward = model(input_ids, position_ids=position_ids, token_type_ids=token_ids, lm_labels=label_ids, position_labels=pos_labels, seeker_post=seeker_post, response_post=response_post, eos=eos, tokenizer=enc, baseline_val=baseline_val)
+			loss, reward = model(input_ids, position_ids=position_ids, token_type_ids=token_ids, seeker_post=seeker_post, response_post=response_post, eos=eos, tokenizer=enc, baseline_val=baseline_val)
 		
 			cumsum.append(cumsum[moving_avg_idx-1] + reward)
 			moving_avg_idx+=1
 
 		else:
-			loss, loss_gpt, ppl, loss_position, reward = model(input_ids, position_ids=position_ids, token_type_ids=token_ids, lm_labels=label_ids, position_labels=pos_labels, seeker_post=seeker_post, response_post=response_post, eos=eos, tokenizer=enc)
+			loss, reward = model(input_ids, position_ids=position_ids, token_type_ids=token_ids, seeker_post=seeker_post, response_post=response_post, eos=eos, tokenizer=enc)
 
 		forward_pass_end_time = time.time()
 
@@ -329,7 +329,6 @@ while True:
 
 		if n_gpu > 1:
 			loss = loss.mean()
-			ppl = ppl.mean()
 		loss = loss / (args.train_batch_size / input_ids.shape[0])
 		if args.fp16:
 			optimizer.backward(loss)
@@ -342,11 +341,6 @@ while True:
 		nb_tr_examples += input_ids.size(0)
 		nb_tr_steps += 1
 		mean_loss = tr_loss / nb_tr_steps
-		if ppl.item() < INF:
-			tr_ppl += ppl.item()
-		else:
-			tr_ppl += mean_ppl
-		mean_ppl = tr_ppl / nb_tr_steps
 
 		n_token_total += input_ids.shape[0] * input_ids.shape[1]
 		n_token_real += (input_ids != 0).sum().item()
@@ -371,7 +365,6 @@ while True:
 			# Print log info to file
 			if args.local_rank != -1:
 				mean_loss = sum(all_gather_list(mean_loss)) / get_world_size()
-				mean_ppl = sum(all_gather_list(mean_ppl)) / get_world_size()
 				n_token_real_all_proc = sum(all_gather_list(n_token_real))
 				n_token_total_all_proc = sum(all_gather_list(n_token_total))
 			else:
@@ -386,10 +379,10 @@ while True:
 				if pbar is not None:
 					pbar.set_postfix_str(
 						f"tok/s: {n_token_real_all_proc//epoch_time//1000}k "
-						f"ppl: {mean_ppl:.2f} epoch: {epoch}")
+						f"epoch: {epoch}")
 					pbar.update(1)
-				print('{},{},{},{},{},{},{},{}'.format(
-					epoch+1, global_step+1, step+1, mean_loss, mean_ppl,
+				print('{},{},{},{},{},{},{}'.format(
+					epoch+1, global_step+1, step+1, mean_loss,
 					n_token_real_all_proc, n_token_total_all_proc, epoch_time),
 					file=train_logger)
 
