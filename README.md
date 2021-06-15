@@ -30,7 +30,7 @@ $ pip install -r requirements.txt
 
 ### 2. Prepare dataset
 
-A sample raw input data file is available in dataset/sample.tsv. Each line in the file has a post and a corresponding response (tab-separated). This input file can be converted into a format that is recognized by the model using with following command:
+A sample raw input data file is available in [dataset/sample.tsv](dataset/sample.tsv). Each line in the file has a post and a corresponding response (tab-separated). This input file can be converted into a format that is recognized by the model using with following command:
 ```
 python src/process_data.py --corpus dataset/sample_data.tsv
 ```
@@ -50,4 +50,4 @@ python src/train_model.py \
 	--num_optim_steps 500
 ```
 
-Note that before running this code, you will need a DialoGPT-like transformer model for initialization (`model_name_or_path`, ideally finetuned on your dataset, check the warm-up strategy in paper) and will need to separately train multiple reward functions. For training the empathy reward, check out [this repository](https://github.com/behavioral-data/Empathy-Mental-Health). 
+Note that before running this code, you will need a DialoGPT-like transformer model for initialization (`model_name_or_path`, ideally finetuned on your dataset, check the warm-start strategy in the paper) and will need to separately train multiple reward functions. For training the empathy reward, check out [this repository](https://github.com/behavioral-data/Empathy-Mental-Health). 
