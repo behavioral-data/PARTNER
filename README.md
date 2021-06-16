@@ -1,7 +1,7 @@
 # PARTNER: Empathic Rewriting using Reinforcement Learning
 This repository contains code for our [WWW 2021 publication](https://arxiv.org/pdf/2101.07714.pdf) on empathic rewriting. The repository is based on [DialoGPT](https://github.com/microsoft/DialoGPT) and uses a similar code structure and environment.
 
-If this code or dataset helps you in your research, please cite:
+If this code helps you in your research, please cite:
 ```bash
 @inproceedings{sharma2021facilitating,
     title={Towards Facilitating Empathic Conversations in Online Mental Health Support: A Reinforcement Learning Approach},
